@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"github.com/gorilla/websocket"
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/mcuadros/go-syslog.v2"
@@ -11,6 +12,8 @@ import (
 )
 
 const (
+	// pulled straight out of gorilla websocket examples
+
 	// Time allowed to write the file to the client.
 	writeWait = 10 * time.Second
 
@@ -29,31 +32,48 @@ var (
 		ReadBufferSize:  1024,
 		WriteBufferSize: 1024,
 	}
-	TaskIDRegex = regexp.MustCompile(`/logstream/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})`)
+	TaskIDRegex     = regexp.MustCompile(`/logstream/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})`)
+	ClientsByTaskID map[string]map[*websocket.Conn]chan string
 )
 
-func reader(ws *websocket.Conn) {
-	defer ws.Close()
-	ws.SetReadLimit(512)
-	ws.SetReadDeadline(time.Now().Add(pongWait))
-	ws.SetPongHandler(func(string) error { ws.SetReadDeadline(time.Now().Add(pongWait)); return nil })
-	for {
-		_, _, err := ws.ReadMessage()
-		if err != nil {
-			break
+func init() {
+	ClientsByTaskID = make(map[string]map[*websocket.Conn]chan string)
+}
+
+func RegisterClient(taskID string, ws *websocket.Conn) chan string {
+	if ClientsByTaskID[taskID] == nil {
+		ClientsByTaskID[taskID] = make(map[*websocket.Conn]chan string)
+	}
+	ClientsByTaskID[taskID][ws] = make(chan string)
+	return ClientsByTaskID[taskID][ws]
+}
+
+func UnregisterClient(taskID string, ws *websocket.Conn) {
+	close(ClientsByTaskID[taskID][ws])
+	delete(ClientsByTaskID[taskID], ws)
+}
+
+func BroadcastLogMessage(taskID string, msg string) {
+	if _, ok := ClientsByTaskID[taskID]; ok {
+		for _, broadcastChan := range ClientsByTaskID[taskID] {
+			broadcastChan <- msg
 		}
 	}
 }
 
 func writer(ws *websocket.Conn, lastMod time.Time, taskID string) {
 	defer ws.Close()
+	broadcastChan := RegisterClient(taskID, ws)
+	defer UnregisterClient(taskID, ws)
 
-	log.Infof("About to write something")
-	c := time.Tick(5 * time.Second)
-	// write what's currently in buffer for
-	for _ = range c {
-		log.Infof("Writing something")
-		ws.WriteMessage(websocket.TextMessage, []byte("hello"))
+	for {
+		select {
+		case msg := <-broadcastChan:
+			if err := ws.WriteMessage(websocket.TextMessage, []byte(msg)); err != nil {
+				log.Error(err)
+				break
+			}
+		}
 	}
 }
 
@@ -65,14 +85,16 @@ func serveWs(w http.ResponseWriter, r *http.Request, taskID string) {
 		}
 		return
 	}
+	ws.SetReadLimit(512)
+	ws.SetReadDeadline(time.Now().Add(pongWait))
+	ws.SetPongHandler(func(string) error { ws.SetReadDeadline(time.Now().Add(pongWait)); return nil })
 
 	var lastMod time.Time
 	if n, err := strconv.ParseInt(r.FormValue("lastMod"), 16, 64); err == nil {
 		lastMod = time.Unix(0, n)
 	}
 
-	go writer(ws, lastMod, taskID)
-	reader(ws)
+	writer(ws, lastMod, taskID)
 }
 
 func logsRouter(w http.ResponseWriter, r *http.Request) {
@@ -101,8 +123,8 @@ func main() {
 
 	go func(channel syslog.LogPartsChannel) {
 		for logParts := range channel {
-			if msg, ok := logParts["message"]; ok {
-				log.Infof("%s", msg)
+			if hostname, ok := logParts["hostname"]; ok && hostname != nil && hostname != "" {
+				BroadcastLogMessage(fmt.Sprintf("%s", hostname), fmt.Sprintf("%s", logParts["message"]))
 			}
 		}
 	}(channel)
