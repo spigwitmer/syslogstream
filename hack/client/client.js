@@ -2,7 +2,6 @@ function GetWebsocket(url) {
 	let socket = new WebSocket(url);
 
 	socket.onmessage = function(event) {
-      console.debug(event);
 	  BroadcastLine(event.data);
 	};
 
