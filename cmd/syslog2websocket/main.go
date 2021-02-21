@@ -31,10 +31,15 @@ var (
 	upgrader = websocket.Upgrader{
 		ReadBufferSize:  1024,
 		WriteBufferSize: 1024,
+		CheckOrigin:     CheckOrigin,
 	}
 	TaskIDRegex     = regexp.MustCompile(`/logstream/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})`)
 	ClientsByTaskID map[string]map[*websocket.Conn]chan string
 )
+
+func CheckOrigin(r *http.Request) bool {
+	return true
+}
 
 func init() {
 	ClientsByTaskID = make(map[string]map[*websocket.Conn]chan string)
@@ -80,6 +85,7 @@ func writer(ws *websocket.Conn, lastMod time.Time, taskID string) {
 func serveWs(w http.ResponseWriter, r *http.Request, taskID string) {
 	ws, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
+		log.Error(err)
 		if _, ok := err.(websocket.HandshakeError); !ok {
 			log.Println(err)
 		}
@@ -94,16 +100,17 @@ func serveWs(w http.ResponseWriter, r *http.Request, taskID string) {
 		lastMod = time.Unix(0, n)
 	}
 
+	log.Info("starting writer")
 	writer(ws, lastMod, taskID)
 }
 
 func logsRouter(w http.ResponseWriter, r *http.Request) {
-	if parts := TaskIDRegex.FindStringSubmatch(r.URL.Path); parts[1] != "" {
-		log.Infof("%s %s [upgrading]", r.Method, r.URL.Path)
+	parts := TaskIDRegex.FindStringSubmatch(r.URL.Path)
+	if parts[1] != "" {
+		log.Infof("upgrading connection: %s %s", r.Method, r.URL.Path)
 		serveWs(w, r, parts[1])
 		return
 	}
-	log.Infof("%s %s [404]", r.Method, r.URL.Path)
 	w.WriteHeader(404)
 }
 
