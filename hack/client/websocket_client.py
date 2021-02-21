@@ -30,7 +30,7 @@ def on_open(ws):
 
 if __name__ == "__main__":
     websocket.enableTrace(True)
-    ws = websocket.WebSocketApp("ws://127.0.0.1:8080/logstream/36b1308f-e0e2-4d4a-ae98-284f51f39a8a",
+    ws = websocket.WebSocketApp("ws://127.0.0.1:8080/logstream/task-36b1308f-e0e2-4d4a-ae98-284f51f39a8a",
                               on_message = on_message,
                               on_error = on_error,
                               on_close = on_close)

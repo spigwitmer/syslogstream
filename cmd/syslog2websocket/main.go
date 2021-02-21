@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -33,8 +34,9 @@ var (
 		WriteBufferSize: 1024,
 		CheckOrigin:     CheckOrigin,
 	}
-	TaskIDRegex     = regexp.MustCompile(`/logstream/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})`)
-	ClientsByTaskID map[string]map[*websocket.Conn]chan string
+	LogstreamRegex    = regexp.MustCompile(`^/logstream/([-0-9A-Za-z.]+)$`)
+	HostnameRegex     = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9-]*$`)
+	ClientsByHostname map[string]map[*websocket.Conn]chan string
 )
 
 func CheckOrigin(r *http.Request) bool {
@@ -42,25 +44,26 @@ func CheckOrigin(r *http.Request) bool {
 }
 
 func init() {
-	ClientsByTaskID = make(map[string]map[*websocket.Conn]chan string)
+	ClientsByHostname = make(map[string]map[*websocket.Conn]chan string)
+	log.SetLevel(log.DebugLevel)
 }
 
 func RegisterClient(taskID string, ws *websocket.Conn) chan string {
-	if ClientsByTaskID[taskID] == nil {
-		ClientsByTaskID[taskID] = make(map[*websocket.Conn]chan string)
+	if ClientsByHostname[taskID] == nil {
+		ClientsByHostname[taskID] = make(map[*websocket.Conn]chan string)
 	}
-	ClientsByTaskID[taskID][ws] = make(chan string)
-	return ClientsByTaskID[taskID][ws]
+	ClientsByHostname[taskID][ws] = make(chan string)
+	return ClientsByHostname[taskID][ws]
 }
 
 func UnregisterClient(taskID string, ws *websocket.Conn) {
-	close(ClientsByTaskID[taskID][ws])
-	delete(ClientsByTaskID[taskID], ws)
+	close(ClientsByHostname[taskID][ws])
+	delete(ClientsByHostname[taskID], ws)
 }
 
 func BroadcastLogMessage(taskID string, msg string) {
-	if _, ok := ClientsByTaskID[taskID]; ok {
-		for _, broadcastChan := range ClientsByTaskID[taskID] {
+	if _, ok := ClientsByHostname[taskID]; ok {
+		for _, broadcastChan := range ClientsByHostname[taskID] {
 			broadcastChan <- msg
 		}
 	}
@@ -100,18 +103,37 @@ func serveWs(w http.ResponseWriter, r *http.Request, taskID string) {
 		lastMod = time.Unix(0, n)
 	}
 
-	log.Info("starting writer")
 	writer(ws, lastMod, taskID)
 }
 
+func validFQDN(fqdn string) bool {
+	parts := strings.Split(fqdn, ".")
+	for _, part := range parts {
+		if !HostnameRegex.Match([]byte(part)) {
+			return false
+		}
+	}
+	return true
+}
+
 func logsRouter(w http.ResponseWriter, r *http.Request) {
-	parts := TaskIDRegex.FindStringSubmatch(r.URL.Path)
+	parts := LogstreamRegex.FindStringSubmatch(r.URL.Path)
+	log.Debugf("%+v", parts)
+	if len(parts) < 2 {
+		log.Debugf("%s: len(parts) < 2", r.URL.Path)
+		w.WriteHeader(404)
+		return
+	}
+	if !validFQDN(parts[1]) {
+		log.Debugf("%s: Not a valid FQDN", r.URL.Path)
+		w.WriteHeader(400)
+		return
+	}
 	if parts[1] != "" {
 		log.Infof("upgrading connection: %s %s", r.Method, r.URL.Path)
 		serveWs(w, r, parts[1])
 		return
 	}
-	w.WriteHeader(404)
 }
 
 func main() {
