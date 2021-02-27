@@ -10,8 +10,9 @@
     </head>
     <body>
         <form
-            onSubmit="StartLogs(document.getElementById('hostname').value); return false;">
+            onSubmit="StartLogs(document.getElementById('server').value, document.getElementById('hostname').value); return false;">
             <div>Hostname: <input id="hostname" type="text" maxlength="255"/></div>
+            <div>Server: <input id="server" type="text" value="127.0.0.1:8080" /></div>
             <div><input type="submit" value="Stream Logs" /></div>
         </form>
         <textarea id="logs"></textarea>

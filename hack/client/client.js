@@ -20,7 +20,7 @@ function BroadcastLine(line) {
 	logsTxt.innerHTML = logsTxt.innerHTML + line + "\n";
 }
 
-function StartLogs(hostname) {
+function StartLogs(server, hostname) {
     if (hostname == null || hostname == "") {
         return;
     }
@@ -29,5 +29,5 @@ function StartLogs(hostname) {
         ws.close();
     }
 	BroadcastLine("starting logs...");
-	ws = GetWebsocket('ws://127.0.0.1:8080/logstream/' + hostname);
+	ws = GetWebsocket('ws://' + server + '/logstream/' + hostname);
 }
