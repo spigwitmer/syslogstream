@@ -7,6 +7,7 @@ try:
     import thread
 except ImportError:
     import _thread as thread
+import sys
 import time
 
 def on_message(ws, message):
@@ -29,8 +30,9 @@ def on_open(ws):
 
 
 if __name__ == "__main__":
+    syslog_hostname = sys.argv[1]
     websocket.enableTrace(True)
-    ws = websocket.WebSocketApp("ws://127.0.0.1:8080/logstream/task-36b1308f-e0e2-4d4a-ae98-284f51f39a8a",
+    ws = websocket.WebSocketApp("ws://127.0.0.1:8080/logstream/%s" % syslog_hostname,
                               on_message = on_message,
                               on_error = on_error,
                               on_close = on_close)
