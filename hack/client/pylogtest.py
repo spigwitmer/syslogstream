@@ -14,8 +14,9 @@ logging.basicConfig(level=logging.DEBUG)
 LOG = logging.getLogger(__name__)
 #LOG.addHandler(QueueHandler(log_queue))
 
+logs_hostname = sys.argv[1]
 syslog_handler = Rfc5424SysLogHandler(('127.0.0.1', 514),
-                                      hostname='task-foo')
+                                      hostname=logs_hostname)
 #syslog_handler.setFormatter(RFC5424Formatter(msgid='36b1308f-e0e2-4d4a-ae98-284f51f39a8a'))
 LOG.addHandler(syslog_handler)
 
