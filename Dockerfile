@@ -1,7 +1,12 @@
-FROM alpine:3
+FROM golang:1.16.0
 
-RUN mkdir -p /app
-COPY syslog2websocket /app/
-RUN chmod +x /app/syslog2websocket
+RUN mkdir -p /build /app
+COPY cmd/ /build/cmd
+COPY go.sum go.mod /build/
+RUN cd /build && go build -ldflags="-extldflags=-static" ./cmd/syslog2websocket
+RUN cp /build/syslog2websocket /app/
+
+EXPOSE 514/udp
+EXPOSE 8080/tcp
 
 CMD ["/app/syslog2websocket"]
